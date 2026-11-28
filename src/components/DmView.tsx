@@ -1,24 +1,26 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { api, ConversationDetail, User } from '../api/client'
+import { useEffect, useState } from 'react'
+import { api, Attachment, ConversationDetail, User } from '../api/client'
+import AttachmentList, { fetchAttachments } from './AttachmentList'
+import Composer from './Composer'
 
-export default function DmView({ conversationId, me }: { conversationId: number; me: User }) {
+export default function DmView({ conversationId, me }: { readonly conversationId: number; readonly me: User }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
-  const [body, setBody] = useState('')
+  const [attachments, setAttachments] = useState<Record<number, Attachment[]>>({})
   const [error, setError] = useState('')
 
-  const load = () => {
+  const load = async () => {
     setError('')
-    api.conversation(conversationId).then(setDetail).catch(e => { setDetail(null); setError(e.message) })
+    let d: ConversationDetail
+    try {
+      d = await api.conversation(conversationId)
+      setDetail(d)
+    } catch (e: any) { setDetail(null); setError(e.message); return }
+    try {
+      setAttachments(await fetchAttachments(d.messages.map(m => m.id), api.dmAttachments))
+    } catch (e: any) { setError(`Could not load attachments: ${e.message}`) }
   }
-  useEffect(load, [conversationId])
-
-  const send = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!body.trim()) return
-    await api.sendDm(conversationId, body.trim())
-    setBody('')
-    load()
-  }
+  const reload = () => { void load() }
+  useEffect(reload, [conversationId])
 
   return (
     <div className="channel">
@@ -28,14 +30,14 @@ export default function DmView({ conversationId, me }: { conversationId: number;
         {detail?.messages.map(m => (
           <div key={m.id} className="msg">
             <div className="msg-meta">user {m.senderId} · {new Date(m.createdAt).toLocaleString()}</div>
-            <div className="msg-body">{m.body}</div>
+            {m.body && <div className="msg-body">{m.body}</div>}
+            <AttachmentList attachments={attachments[m.id]} me={me} onChanged={reload} />
           </div>
         ))}
       </div>
-      <form className="composer" onSubmit={send}>
-        <input value={body} onChange={e => setBody(e.target.value)} placeholder="Message…" />
-        <button type="submit">Send</button>
-      </form>
+      <Composer key={conversationId} placeholder="Message…" submitLabel="Send"
+        post={b => api.sendDm(conversationId, b).then(m => m.id)}
+        upload={api.uploadDmAttachment} onSent={reload} />
     </div>
   )
 }

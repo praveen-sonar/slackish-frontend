@@ -50,9 +50,21 @@ body, html, #root { margin: 0; height: 100%; font-family: -apple-system, BlinkMa
 .msg-meta { font-size: 12px; color: var(--muted); }
 .msg-body { font-size: 15px; white-space: pre-wrap; }
 .link { align-self: flex-start; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
-.composer { display: flex; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--border); }
+.composer { display: flex; flex-direction: column; gap: 6px; padding: 14px 18px; border-top: 1px solid var(--border); }
+.composer-row { display: flex; gap: 8px; }
 .composer input { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
 .composer button { padding: 10px 16px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+.composer button:disabled { opacity: .6; cursor: default; }
+.composer button.attach { padding: 10px; background: transparent; border: 1px solid var(--border); color: var(--text); }
+.composer-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: #f4f4f5; border: 1px solid var(--border); border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 13px; }
+.composer button.chip-x { padding: 0 6px; background: transparent; color: var(--muted); font-size: 12px; }
+
+.attachments { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
+.attachment { display: flex; flex-direction: column; gap: 4px; align-self: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.attachment-info { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.attachment-info a { color: var(--accent); text-decoration: none; }
+.attachment-thumb { display: block; max-width: 240px; max-height: 180px; border-radius: 6px; }
 
 .thread-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 340px; background: #fff; border-left: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px; }
 .thread-head { display: flex; justify-content: space-between; align-items: center; }

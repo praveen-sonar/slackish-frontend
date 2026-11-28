@@ -1,36 +1,41 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { api, Channel, Message, User, Workspace } from '../api/client'
+import { useEffect, useState } from 'react'
+import { api, Attachment, Channel, Message, User, Workspace } from '../api/client'
+import AttachmentList, { fetchAttachments } from './AttachmentList'
+import Composer from './Composer'
 
-interface Props { workspace: Workspace; channelId: number; channels: Channel[]; me: User }
+interface Props { readonly workspace: Workspace; readonly channelId: number; readonly channels: Channel[]; readonly me: User }
+interface Thread { parent: Message; replies: Message[]; attachments: Record<number, Attachment[]> }
 
 export default function ChannelView({ channelId, channels, me }: Props) {
   const channel = channels.find(c => c.id === channelId)
   const [messages, setMessages] = useState<Message[]>([])
-  const [body, setBody] = useState('')
+  const [attachments, setAttachments] = useState<Record<number, Attachment[]>>({})
   const [error, setError] = useState('')
-  const [thread, setThread] = useState<{ parent: Message; replies: Message[] } | null>(null)
+  const [thread, setThread] = useState<Thread | null>(null)
   const [lookupId, setLookupId] = useState('')
 
-  const load = () => {
+  const load = async () => {
     setError('')
-    api.channelMessages(channelId)
-      .then(m => setMessages(m.filter(x => x.parentId === null)))
-      .catch(e => { setMessages([]); setError(e.message) })
+    let top: Message[]
+    try {
+      top = (await api.channelMessages(channelId)).filter(x => x.parentId === null)
+      setMessages(top)
+    } catch (e: any) { setMessages([]); setError(e.message); return }
+    try {
+      setAttachments(await fetchAttachments(top.map(m => m.id), api.messageAttachments))
+    } catch (e: any) { setError(`Could not load attachments: ${e.message}`) }
   }
-  useEffect(load, [channelId])
-
-  const send = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!body.trim()) return
-    await api.postMessage(channelId, body.trim())
-    setBody('')
-    load()
-  }
+  const reload = () => { void load() }
+  useEffect(reload, [channelId])
 
   const openThread = async (m: Message) => {
-    const replies = await api.thread(m.id)
-    setThread({ parent: m, replies })
+    try {
+      const replies = await api.thread(m.id)
+      const atts = await fetchAttachments([m.id, ...replies.map(r => r.id)], api.messageAttachments)
+      setThread({ parent: m, replies, attachments: atts })
+    } catch (e: any) { setError(e.message) }
   }
+  const reopenThread = () => { if (thread) void openThread(thread.parent) }
 
   const lookup = async () => {
     const id = Number(lookupId)
@@ -55,15 +60,15 @@ export default function ChannelView({ channelId, channels, me }: Props) {
         {messages.map(m => (
           <div key={m.id} className="msg">
             <div className="msg-meta">user {m.userId} · {new Date(m.createdAt).toLocaleString()} · #{m.id}</div>
-            <div className="msg-body">{m.body}</div>
-            <button className="link" onClick={() => openThread(m)}>Reply in thread</button>
+            {m.body && <div className="msg-body">{m.body}</div>}
+            <AttachmentList attachments={attachments[m.id]} me={me} onChanged={reload} />
+            <button className="link" onClick={() => { void openThread(m) }}>Reply in thread</button>
           </div>
         ))}
       </div>
-      <form className="composer" onSubmit={send}>
-        <input value={body} onChange={e => setBody(e.target.value)} placeholder={`Message ${channel?.name ?? ''}`} />
-        <button type="submit">Send</button>
-      </form>
+      <Composer key={channelId} placeholder={`Message ${channel?.name ?? ''}`} submitLabel="Send"
+        post={b => api.postMessage(channelId, b).then(m => m.id)}
+        upload={api.uploadMessageAttachment} onSent={reload} />
 
       {thread && (
         <div className="thread-panel">
@@ -71,32 +76,24 @@ export default function ChannelView({ channelId, channels, me }: Props) {
             <strong>Thread</strong>
             <button className="ghost" onClick={() => setThread(null)}>✕</button>
           </div>
-          <div className="msg"><div className="msg-body">{thread.parent.body}</div></div>
+          <div className="msg">
+            {thread.parent.body && <div className="msg-body">{thread.parent.body}</div>}
+            <AttachmentList attachments={thread.attachments[thread.parent.id]} me={me}
+              onChanged={() => { reopenThread(); reload() }} />
+          </div>
           <div className="thread-replies">
             {thread.replies.map(r => (
-              <div key={r.id} className="msg"><div className="msg-body">{r.body}</div></div>
+              <div key={r.id} className="msg">
+                {r.body && <div className="msg-body">{r.body}</div>}
+                <AttachmentList attachments={thread.attachments[r.id]} me={me} onChanged={reopenThread} />
+              </div>
             ))}
           </div>
-          <ThreadComposer parentId={thread.parent.id} channelId={channelId} onSent={() => openThread(thread.parent)} />
+          <Composer key={thread.parent.id} placeholder="Reply…" submitLabel="Reply"
+            post={b => api.postMessage(channelId, b, thread.parent.id).then(m => m.id)}
+            upload={api.uploadMessageAttachment} onSent={reopenThread} />
         </div>
       )}
     </div>
-  )
-}
-
-function ThreadComposer({ parentId, channelId, onSent }: { parentId: number; channelId: number; onSent: () => void }) {
-  const [body, setBody] = useState('')
-  const send = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!body.trim()) return
-    await api.postMessage(channelId, body.trim(), parentId)
-    setBody('')
-    onSent()
-  }
-  return (
-    <form className="composer" onSubmit={send}>
-      <input value={body} onChange={e => setBody(e.target.value)} placeholder="Reply…" />
-      <button type="submit">Reply</button>
-    </form>
   )
 }

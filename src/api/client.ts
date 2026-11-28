@@ -13,14 +13,28 @@ export interface Invitation {
   id: number; workspaceId: number; email: string; token: string
   role: string; status: string; expiresAt: string
 }
+export interface Attachment {
+  id: number; messageId: number | null; dmMessageId: number | null; filename: string
+  contentType: string; size: number; uploaderId: number; createdAt: string
+}
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
+  return parse<T>(await fetch(path, {
     method,
     credentials: 'include',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
-  })
+  }))
+}
+
+// Multipart, one file per request; the browser sets the Content-Type boundary.
+async function upload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('file', file)
+  return parse<T>(await fetch(path, { method: 'POST', credentials: 'include', body: form }))
+}
+
+async function parse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let msg = `HTTP ${res.status}`
     try { const j = await res.json(); if (j.error) msg = j.error } catch { /* ignore */ }
@@ -67,6 +81,16 @@ export const api = {
     req<Conversation>('POST', '/api/dms', { workspaceId, otherUserId }),
   conversation: (id: number) => req<ConversationDetail>('GET', `/api/dms/${id}`),
   sendDm: (id: number, body: string) => req<DmMessage>('POST', `/api/dms/${id}/messages`, { body }),
+
+  // attachments (uploaded to an existing message, max 10 MB each)
+  messageAttachments: (messageId: number) => req<Attachment[]>('GET', `/api/messages/${messageId}/attachments`),
+  uploadMessageAttachment: (messageId: number, file: File) =>
+    upload<Attachment>(`/api/messages/${messageId}/attachments`, file),
+  dmAttachments: (dmMessageId: number) => req<Attachment[]>('GET', `/api/dms/messages/${dmMessageId}/attachments`),
+  uploadDmAttachment: (dmMessageId: number, file: File) =>
+    upload<Attachment>(`/api/dms/messages/${dmMessageId}/attachments`, file),
+  deleteAttachment: (id: number) => req<void>('DELETE', `/api/attachments/${id}`),
+  attachmentUrl: (id: number) => `/api/attachments/${id}`,
 
   // invitations
   invite: (wsId: number, email: string, role: string) =>
